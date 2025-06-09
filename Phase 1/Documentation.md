@@ -5,7 +5,7 @@
 
 | Full name | carné |
 |---|---|
-| Juan Pérez | 202200000 |
+| José Lorenzana | 202206560 |
 | Roberto García | 202201724 |
 | Carlos Rodríguez | 202200000 |
 | Ana López | 202100000 |
