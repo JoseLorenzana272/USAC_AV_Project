@@ -1,0 +1,82 @@
+Paso 1
+sudo apt update && sudo apt upgrade -y
+sudo apt install build-essential libncurses-dev bison flex libssl-dev libelf-dev -y
+
+Paso 2
+mkdir -p ~/kernel/usac-linux
+cd ~/kernel/usac-linux
+
+wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.6.30.tar.xz
+tar -xf linux-6.6.30.tar.xz
+cd linux-6.6.30
+
+cp /boot/config-$(uname -r) .config
+make olddefconfig
+
+
+MENSAJE PERSONALIZADO
+Paso 1: Modificar
+nano init/main.c
+
+Buscar esta funcion
+asmlinkage void __init start_kernel(void)
+
+y agregar esta linea
+printk(KERN_INFO "hola soy el Kernel y esto lo hizo 202201724\n");
+
+
+
+CAMBIAR UTS SYSNAME
+PASOS
+nano include/linux/uts.h
+#define UTS_SYSNAME "Linux" CAMBIAR POR #define UTS_SYSNAME "USAC Linux"
+
+
+devuelva la hora actual en segundos desde el epoch linux
+nano kernel/sys.c
+
+AGREGAR esto
+#include <linux/time.h>
+#include <linux/ktime.h>
+#include <linux/syscalls.h>
+
+SYSCALL_DEFINE0(mi_tiempo)
+{
+    struct timespec64 ts;
+    ktime_get_real_ts64(&ts);
+    return ts.tv_sec;  // Retorna solo los segundos
+}
+
+#include <linux/time.h>
+#include <linux/ktime.h>
+#include <linux/syscalls.h>
+
+SYSCALL_DEFINE0(mi_tiempo)
+{
+    struct timespec64 ts;
+    ktime_get_real_ts64(&ts);
+    return ts.tv_sec;  // Retorna solo los segundos
+}
+
+nano arch/x86/entry/syscalls/syscall_64.tbl
+Al final agregar esto
+548     common   mi_tiempo     __x64_sys_mi_tiempo
+
+nano include/linux/syscalls.h
+agregarlo al final
+asmlinkage long sys_mi_tiempo(void);
+
+Compilar el kernel
+make -j$(nproc)
+sudo make modules_install
+sudo make install
+sudo update-grub
+
+
+COMPILAR EL ARCHIVO EN c
+gcc test_tiempo.c -o test_tiempo
+./test_tiempo
+
+
+
+
