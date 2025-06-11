@@ -7,7 +7,7 @@
 |---|---|
 | José Lorenzana | 202206560 |
 | Roberto García | 202201724 |
-| Carlos Rodríguez | 202200000 |
+| Javier Avila | 202200392 |
 | Ana López | 202100000 |
 
 
@@ -43,7 +43,8 @@ cp -v /boot/config-$(uname -r) .config
 
 ---
 
-### 3. Implementing the `sys_emergency_panic` System Call
+### 3. Implementing the `sys_detect_suspicious` System Call
+
 
 #### 3.1 Declaring the System Call
 
@@ -56,7 +57,7 @@ vim include/linux/syscalls.h
 Add before the `#endif`:
 
 ```c
-asmlinkage long sys_emergency_panic(void);
+asmlinkage long sys_detect_suspicious(const char __user *filename);
 ```
 
 #### 3.2 Registering the System Call
@@ -70,10 +71,92 @@ vim arch/x86/entry/syscalls/syscall_64.tbl
 Then we add the following line:
 
 ```
-548   common   emergency_panic     sys_emergency_panic
+549   common   detect_suspicious     sys_detect_suspicious
 ```
 
 #### 3.3 Implementing the System Call
+
+Create implementation file:
+
+```bash
+nano kernel/detect_suspicious.c
+```
+
+Add the following code:
+
+```c
+#include <linux/syscalls.h>
+#include <linux/uaccess.h>
+#include <linux/sched.h>
+#include <linux/string.h>
+
+SYSCALL_DEFINE1(detect_suspicious, const char __user *filename)
+{
+    char k_filename[256];
+    long len;
+
+    len = strncpy_from_user(k_filename, filename, sizeof(k_filename) - 1);
+    if (len < 0)
+        return -EFAULT;
+
+    k_filename[len] = '\0';
+
+    if (strstr(k_filename, "nmap") || strstr(k_filename, "netcat") || strstr(k_filename, "ssh")) {
+        printk(KERN_ALERT "Advertencia: intento de uso de herramienta de red por PID %d (%s)\n",
+               current->pid, k_filename);
+    }
+
+    return 0;
+}
+
+```
+
+#### 3.4 Updating the Kernel Makefile
+
+We'll edit the kernel Makefile:
+
+```bash
+vim kernel/Makefile
+```
+
+Then in the source file:
+
+```makefile
+obj-y += detect_suspicious.o
+```
+
+
+### 4. Implementing the `sys_emergency_panic` System Call
+
+#### 4.1 Declaring the System Call
+
+Edit the syscall header:
+
+```bash
+vim include/linux/syscalls.h
+```
+
+Add before the `#endif`:
+
+```c
+asmlinkage long sys_emergency_panic(void);
+```
+
+#### 4.2 Registering the System Call
+
+We'll edit the syscall table:
+
+```bash
+vim arch/x86/entry/syscalls/syscall_64.tbl
+```
+
+Then we add the following line:
+
+```
+548   common   emergency_panic     sys_emergency_panic
+```
+
+#### 4.3 Implementing the System Call
 
 Create implementation file:
 
@@ -95,7 +178,7 @@ SYSCALL_DEFINE0(emergency_panic)
 }
 ```
 
-#### 3.4 Updating the Kernel Makefile
+#### 4.4 Updating the Kernel Makefile
 
 We'll edit the kernel Makefile:
 
@@ -111,7 +194,7 @@ obj-y += usac_syscalls.o
 
 ---
 
-### 4. Personalized message on `kernel`
+### 5. Personalized message on `kernel`
 Make sure your system is up to date and install the necessary build tools.
 
 ```bash
@@ -251,7 +334,7 @@ gcc test_tiempo.c -o test_tiempo
 
 ---
 
-### 5. Compiling and Installing the Kernel
+### 6. Compiling and Installing the Kernel
 
 ```bash
 fakeroot make -j$(nproc)
@@ -263,7 +346,7 @@ sudo reboot
 
 ---
 
-### 6. Testing the System Call
+### 7. Testing the System Call
 
 We create a test program:
 
@@ -308,7 +391,7 @@ Result: Triggers a panic and kills the VM.
 
 ---
 
-### 6. Verification
+### 8. Verification
 
 After rebooting into another kernel:
 
