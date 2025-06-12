@@ -8,7 +8,7 @@
 | José Lorenzana | 202206560 |
 | Roberto García | 202201724 |
 | Javier Avila | 202200392 |
-| Ana López | 202100000 |
+| Diego Gomez | 201908327 |
 
 
 ## System Information
@@ -402,6 +402,90 @@ dmesg | grep "USAC Linux"
 Confirms that the panic message was logged.
 
 ---
+
+### 9. Implementing a Syscall that can show us the last 5 Kernel Logs.
+
+For this it is important to know where we need to start modifying the files.
+
+First we need to locate the Sys.c file, this is located in the Route
+```bash
+Linux/arch/sys.c
+```
+Then we need to start editing the file, first we defined the next buffer at the begining of the file
+
+```bash
+#define BUFFER_SIZE 1024
+```
+After we done this, we need to add the next function.
+
+```bash
+SYSCALL_DEFINE2(ultimos_logs, char __user *, user_buffer, size_t, len)
+{
+        struct kmsg_dump_iter iter;
+        char *buffer;
+        char *output_buffer;
+        size_t line_len;
+        int total_len = 0;
+        int count = 0;
+
+        if(len < BUFFER_SIZE){
+                return -EINVAL;
+        }
+        output_buffer = kzalloc(len, GFP_KERNEL);
+
+        if(!output_buffer){
+                return -ENOMEM;
+        }
+
+	buffer = kmalloc(BUFFER_SIZE, GFP_KERNEL);
+        if(!buffer){
+                kfree(output_buffer);
+                return -ENOMEM;
+        }
+
+        kmsg_dump_rewind(&iter);
+
+        while(kmsg_dump_get_line(&iter, true, buffer, BUFFER_SIZE - 1, &line_len)){
+                buffer[line_len] = '\0';
+
+                if(count >=5){
+                         memmove(output_buffer, output_buffer + line_len, total_len - line_len);
+                        total_len -= line_len;
+                }else {
+                        count++;
+
+                }
+                memcpy(output_buffer + total_len, buffer, line_len);
+		total_len += line_len;
+
+	}
+
+	if (copy_to_user(user_buffer, output_buffer, total_len)){
+		kfree(output_buffer);
+		kfree(buffer);
+		return -EFAULT;
+	}
+	kfree(output_buffer);
+	kfree(buffer);
+	return total_len;
+}
+```
+After this we will need to modify a few other files, starting with the syscall_64.tbl
+
+We need to add our new function at the end of the x64 function like im doing down here
+
+```bash
+454	common	ultimos_logs		sys_ultimos_logs
+```
+
+and following that we need to alter the syscalls.h file
+
+```bash
+asmlinkage long sys_ultimos_logs(char __user *user_buffer, size_t len);
+```
+
+
+
 
 ## Problems Encountered and Solutions
 
