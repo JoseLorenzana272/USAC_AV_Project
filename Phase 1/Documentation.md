@@ -512,3 +512,13 @@ asmlinkage long sys_ultimos_logs(char __user *user_buffer, size_t len);
 - Verify syscall numbers before use.
 - Use `dmesg` to check logs.
 - Modify syscall tables for other architectures if needed.
+
+## Screen Shots
+![image](https://github.com/user-attachments/assets/f90c3c84-320e-4225-b796-d03c7bfd5bf1)
+![image](https://github.com/user-attachments/assets/4f31844e-c656-4ffb-898c-11df70aae3cf)
+![image](https://github.com/user-attachments/assets/607f68f7-a5bd-41f6-bdf6-c24631317f05)
+![image](https://github.com/user-attachments/assets/5337cf40-3d16-48fe-84a1-bedfd6c80bed)
+
+
+
+
