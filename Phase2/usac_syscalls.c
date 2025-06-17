@@ -7,6 +7,7 @@
 #include <linux/completion.h>
 #include <linux/printk.h>
 #include <linux/syscalls_usac.h>
+#include <linux/vmalloc.h>
 
 typedef struct {
     unsigned char *data;
@@ -83,7 +84,7 @@ int process_file(const char *input_path, const char *output_path, const char *ke
         goto close_key_file;
     }
 
-    key_buffer = kmalloc(key_file_size, GFP_KERNEL);
+    key_buffer = vmalloc(key_file_size);
     if (!key_buffer) {
         ret = -ENOMEM;
         printk(KERN_ERR "Memory cannot be assign\n");
@@ -103,7 +104,7 @@ int process_file(const char *input_path, const char *output_path, const char *ke
         goto free_key_buffer;
     }
 
-    data_buffer = kmalloc(input_file_size, GFP_KERNEL);
+    data_buffer = vmalloc(input_file_size, GFP_KERNEL);
     if (!data_buffer) {
         ret = -ENOMEM;
         printk(KERN_ERR "Cannot assign memory for data\n");
@@ -172,10 +173,10 @@ free_task_resources:
     kfree(fragments);
 
 free_data_buffer:
-    kfree(data_buffer);
+    vfree(data_buffer);
 
 free_key_buffer:
-    kfree(key_buffer);
+    vfree(key_buffer);
 
 close_key_file:
     filp_close(key_file, NULL);
