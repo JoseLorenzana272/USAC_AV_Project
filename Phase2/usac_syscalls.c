@@ -104,7 +104,7 @@ int process_file(const char *input_path, const char *output_path, const char *ke
         goto free_key_buffer;
     }
 
-    data_buffer = vmalloc(input_file_size, GFP_KERNEL);
+    data_buffer = vmalloc(input_file_size);
     if (!data_buffer) {
         ret = -ENOMEM;
         printk(KERN_ERR "Cannot assign memory for data\n");
