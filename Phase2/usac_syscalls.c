@@ -6,7 +6,7 @@
 #include <linux/delay.h>
 #include <linux/completion.h>
 #include <linux/printk.h>
-#include <linux/syscalls_usac.h>
+#include <linux/usac_syscalls.h>
 #include <linux/vmalloc.h>
 
 typedef struct {
