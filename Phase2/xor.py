@@ -46,5 +46,5 @@ def main():
 
     xor_encrypt_decrypt(args.input, args.key, args.output)
 
-if __name__ == "_main_":
+if __name__ == "__main__":
     main()

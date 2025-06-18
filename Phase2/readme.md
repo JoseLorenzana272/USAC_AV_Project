@@ -1,6 +1,15 @@
 
 # Kernel System Call Implementation: XOR Encryption and Decryption
 
+## Teamates
+
+| Full name | carné |
+|---|---|
+| José Lorenzana | 202206560 |
+| Roberto García | 202201724 |
+| Javier Avila | 202200392 |
+| Diego Gomez | 201908327 |
+
 ## Introduction
 
 Working with the Linux kernel is a complex and error-prone task if one lacks the necessary experience and knowledge. This report documents all the steps followed during the development of two custom system calls: `xor_encrypt` and `xor_decrypt`. These system calls perform multithreaded XOR encryption and decryption using a provided key file.
