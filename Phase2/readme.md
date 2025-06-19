@@ -114,7 +114,28 @@ long resultado = syscall(549, archivo_entrada, archivo_salida, archivo_clave, nu
 
 ---
 
-## 5. Problems and Solutions
+
+## 5. Benchmarking and results
+
+How to use it
+
+we will use the next comand on a bash terminal
+ 
+```bash
+compile gcc benchmark.c -o benchmark -lssl -lcrypto
+```
+
+after we´ve done this, we´ll have to run the program using bash
+
+```bash
+./benchmark
+```
+
+and will get a result similar to the next image
+
+![Texto alternativo](./benchmark.jpg)
+ 
+## 6. Problems and Solutions
 
 ### Problem 1: Invalid Memory Access
 
@@ -140,7 +161,7 @@ long resultado = syscall(549, archivo_entrada, archivo_salida, archivo_clave, nu
 
 ---
 
-## 6. Conclusion
+## 7. Conclusion
 
 This project demonstrated how to:
 
