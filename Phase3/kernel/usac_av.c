@@ -6,8 +6,113 @@
 #include <linux/fs.h>
 #include <linux/usac_syscalls.h>
 #include <linux/user_namespace.h>
+#include <linux/kernel.h>
+#include <linux/slab.h>
+#include <linux/string.h>
+#include <linux/crypto.h>
+#include <linux/scatterlist.h>
+#include <linux/file.h>
+#include <crypto/hash.h>
 
-// ANTIVIRYS STATS
+// Variables for scan path
+#define MAX_PATH 256
+#define HASH_LEN 33
+#define MD5_DIGEST_LENGTH 16
+
+struct signature {
+    const char *hash;
+    int severity; // 0: clean, 1: suspicious, 2: malicious
+};
+
+// Simulation of signatures.db
+static const struct signature sig_db[] = {
+    {"5d41402abc4b2a76b9719d911017c592", 2}, // Malicious
+    {"098f6bcd4621d373cade4e832627b4f6", 1}, // Suspicious
+    {"e99a18c428cb38d5f260853678922e03", 0}, // Clean
+    {NULL, 0}
+};
+
+// Calculate md5
+static int calculate_md5(struct file *file, char *hash_out)
+{
+    struct crypto_shash *tfm;
+    struct shash_desc *desc;
+    unsigned char *buffer;
+    unsigned char *hash;
+    int ret = 0;
+    loff_t pos = 0;
+    ssize_t bytes;
+    int i;
+
+    // Reserve memory
+    buffer = kmalloc(PAGE_SIZE, GFP_KERNEL);
+    if (!buffer) return -ENOMEM;
+
+    hash = kmalloc(MD5_DIGEST_LENGTH, GFP_KERNEL);
+    if (!hash) {
+        kfree(buffer);
+        return -ENOMEM;
+    }
+
+    // Initialize MD5
+    tfm = crypto_alloc_shash("md5", 0, 0);
+    if (IS_ERR(tfm)) {
+        ret = PTR_ERR(tfm);
+        goto cleanup;
+    }
+
+    desc = kmalloc(sizeof(struct shash_desc) + crypto_shash_descsize(tfm), GFP_KERNEL);
+    if (!desc) {
+        ret = -ENOMEM;
+        goto cleanup_tfm;
+    }
+    desc->tfm = tfm;
+
+    ret = crypto_shash_init(desc);
+    if (ret) goto cleanup_desc;
+
+    // Read file
+    while ((bytes = kernel_read(file, buffer, PAGE_SIZE, &pos)) > 0) {
+        ret = crypto_shash_update(desc, buffer, bytes);
+        if (ret) goto cleanup_desc;
+    }
+
+    if (bytes < 0) {
+        ret = bytes;
+        goto cleanup_desc;
+    }
+
+    // Finish hash
+    ret = crypto_shash_final(desc, hash);
+    if (ret) goto cleanup_desc;
+
+    // Transform to HEX
+    for (i = 0; i < MD5_DIGEST_LENGTH; i++)
+        sprintf(&hash_out[i * 2], "%02x", hash[i]);
+    hash_out[HASH_LEN - 1] = '\0';
+
+cleanup_desc:
+    kfree(desc);
+cleanup_tfm:
+    crypto_free_shash(tfm);
+cleanup:
+    kfree(hash);
+    kfree(buffer);
+    return ret;
+}
+
+// Compare with simulated  signatures.db
+static int lookup_hash(const char *hash)
+{
+    int i;
+    for (i = 0; sig_db[i].hash; i++) {
+        if (strcmp(hash, sig_db[i].hash) == 0)
+            return sig_db[i].severity;
+    }
+    return 0; // Clean by default
+}
+
+
 SYSCALL_DEFINE1(antivirus_stats, struct antivirus_stats __user *, stats)
 {
     struct sysinfo si;
@@ -20,7 +125,7 @@ SYSCALL_DEFINE1(antivirus_stats, struct antivirus_stats __user *, stats)
     kstats.mem_cache = si.bufferram * si.mem_unit / 1024;
     kstats.swap_used = (si.totalswap - si.freeswap) * si.mem_unit / 1024;
     kstats.active_pages = global_node_page_state(NR_ACTIVE_ANON) +
-                            global_node_page_state(NR_ACTIVE_FILE);
+                          global_node_page_state(NR_ACTIVE_FILE);
     kstats.inactive_pages = global_node_page_state(NR_INACTIVE_ANON) +
                             global_node_page_state(NR_INACTIVE_FILE);
 
@@ -40,10 +145,10 @@ SYSCALL_DEFINE1(quarantine_file, const char __user *, path)
     struct renamedata rd;
     char *kpath, *filename;
     char dest_path[PATH_MAX];
-    struct mnt_idmap *idmap = &nop_mnt_idmap; // Use idmap without changes
+    struct mnt_idmap *idmap = &nop_mnt_idmap; // Usar idmap sin cambios
     int ret;
 
-    // Copy the path from user space
+    // Copiar la ruta desde el espacio de usuario
     kpath = kmalloc(PATH_MAX, GFP_KERNEL);
     if (!kpath)
         return -ENOMEM;
@@ -54,7 +159,7 @@ SYSCALL_DEFINE1(quarantine_file, const char __user *, path)
     }
     kpath[PATH_MAX - 1] = '\0';
 
-    // Get the file name
+    // Obtener el nombre del archivo
     filename = strrchr(kpath, '/');
     if (!filename) {
         pr_err("USAC-AV: Invalid path\n");
@@ -63,17 +168,17 @@ SYSCALL_DEFINE1(quarantine_file, const char __user *, path)
     }
     filename++;
 
-    // Resolve the source file path
+    // Resolver la ruta del archivo fuente
     ret = kern_path(kpath, LOOKUP_FOLLOW, &src_path);
     if (ret) {
         pr_err("USAC-AV: Failed to resolve source path %s\n", kpath);
         goto out_kpath;
     }
 
-    // Resolve or create /var/quarantine
+    // Resolver o crear /var/quarantine
     ret = kern_path("/var/quarantine", LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &dest_dir);
     if (ret) {
-        // Resolve /var as parent directory
+        // Resolver /var como directorio padre
         ret = kern_path("/var", LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &parent_path);
         if (ret) {
             pr_err("USAC-AV: Failed to resolve /var\n");
@@ -81,7 +186,7 @@ SYSCALL_DEFINE1(quarantine_file, const char __user *, path)
             goto out_kpath;
         }
 
-        // Create /var/quarantine
+        // Crear /var/quarantine
         quarantine_dentry = kern_path_create(AT_FDCWD, "/var/quarantine", &parent_path, 0700);
         if (IS_ERR(quarantine_dentry)) {
             pr_err("USAC-AV: Failed to create quarantine dentry\n");
@@ -103,7 +208,7 @@ SYSCALL_DEFINE1(quarantine_file, const char __user *, path)
         path_put(&parent_path);
         dput(quarantine_dentry);
 
-        // Resolve /var/quarantine again
+        // Resolver de nuevo /var/quarantine
         ret = kern_path("/var/quarantine", LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &dest_dir);
         if (ret) {
             pr_err("USAC-AV: Failed to resolve /var/quarantine after creation\n");
@@ -112,10 +217,10 @@ SYSCALL_DEFINE1(quarantine_file, const char __user *, path)
         }
     }
 
-    // Build the destination path
+    // Construir la ruta de destino
     snprintf(dest_path, PATH_MAX, "%s/%s", "/var/quarantine", filename);
 
-    // Create the destination entry
+    // Crear la entrada de destino
     dest_dentry = kern_path_create(AT_FDCWD, dest_path, &dest_dir, 0);
     if (IS_ERR(dest_dentry)) {
         pr_err("USAC-AV: Failed to create destination path %s\n", dest_path);
@@ -125,7 +230,7 @@ SYSCALL_DEFINE1(quarantine_file, const char __user *, path)
         goto out_kpath;
     }
 
-    // Prepare the renamedata structure
+    // Preparar la estructura renamedata
     rd.old_mnt_idmap = idmap;
     rd.old_dir = d_inode(src_path.dentry->d_parent);
     rd.old_dentry = src_path.dentry;
@@ -135,7 +240,7 @@ SYSCALL_DEFINE1(quarantine_file, const char __user *, path)
     rd.flags = 0;
     rd.delegated_inode = NULL;
 
-    // Move the file
+    // Mover el archivo
     ret = vfs_rename(&rd);
     if (ret) {
         pr_err("USAC-AV: Failed to move file to %s\n", dest_path);
@@ -143,7 +248,7 @@ SYSCALL_DEFINE1(quarantine_file, const char __user *, path)
         goto out_paths;
     }
 
-    // Release resources
+    // Liberar recursos
     path_put(&src_path);
     path_put(&dest_dir);
     dput(dest_dentry);
@@ -155,6 +260,54 @@ out_kpath:
 out_paths:
     path_put(&src_path);
     path_put(&dest_dir);
+    kfree(kpath);
+    return ret;
+}
+
+// Scan File Sys Call
+SYSCALL_DEFINE1(scan_file, const char __user *, filepath)
+{
+    char *kpath;
+    struct file *file;
+    char hash[HASH_LEN];
+    int ret;
+
+    // Reserve memory for route
+    kpath = kmalloc(MAX_PATH, GFP_KERNEL);
+    if (!kpath) return -ENOMEM;
+
+    // Copy route from user space
+    if (copy_from_user(kpath, filepath, MAX_PATH)) {
+        ret = -EFAULT;
+        goto free_kpath;
+    }
+    kpath[MAX_PATH - 1] = '\0';
+
+    printk(KERN_INFO "[USAC-AV] Scanning File: %s\n", kpath);
+
+    // Open file
+    file = filp_open(kpath, O_RDONLY, 0);
+    if (IS_ERR(file)) {
+        ret = PTR_ERR(file);
+        printk(KERN_ERR "[USAC-AV] Error opening the file: %d\n", ret);
+        goto free_kpath;
+    }
+
+    // Calculate hash
+    ret = calculate_md5(file, hash);
+    if (ret) {
+        printk(KERN_ERR "[USAC-AV] Error calculating MD5: %d\n", ret);
+        goto close_file;
+    }
+
+    printk(KERN_INFO "[USAC-AV] Hash calculated: %s\n", hash);
+
+    // Compare with signatures.db simulation
+    ret = lookup_hash(hash);
+
+close_file:
+    filp_close(file, NULL);
+free_kpath:
     kfree(kpath);
     return ret;
 }
