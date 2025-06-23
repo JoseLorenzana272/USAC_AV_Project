@@ -9,7 +9,7 @@
 #define SYS_ANTIVIRUS_STATS 550
 #define SYS_QUARANTINE_FILE 551
 #define SYS_get_page_faults 552
-#define SYS_scan_file 553 // Adjust if needed based on your kernel
+#define SYS_scan_file 553
 
 // Structure for antivirus system statistics
 struct antivirus_stats {
