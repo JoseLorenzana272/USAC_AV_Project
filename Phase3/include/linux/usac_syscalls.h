@@ -26,5 +26,6 @@ asmlinkage long sys_xor_decrypt(const char __user *input_file,
 
 asmlinkage long sys_antivirus_stats(struct antivirus_stats __user *stats);
 asmlinkage long sys_quarantine_file(const char __user *path);
+asmlinkage long sys_get_page_faults(pid_t pid, struct page_faults_data __user *info);
 asmlinkage long sys_scan_file(const char __user *filepath);
 #endif
