@@ -4,6 +4,19 @@
 #include <linux/syscalls.h>
 #include <linux/kernel.h>
 
+struct process_info {
+    __kernel_pid_t pid;
+    __kernel_pid_t ppid;
+    char comm[16];  
+    long state;
+    unsigned long vsize;
+    unsigned long rss;
+    int nice;
+    unsigned long start_time;
+    unsigned long utime;
+    unsigned long stime;
+};
+
 struct antivirus_stats {
     unsigned long mem_used;
     unsigned long mem_free;
@@ -28,5 +41,5 @@ asmlinkage long sys_antivirus_stats(struct antivirus_stats __user *stats);
 asmlinkage long sys_quarantine_file(const char __user *path);
 asmlinkage long sys_get_page_faults(pid_t pid, struct page_faults_data __user *info);
 asmlinkage long sys_scan_file(const char __user *filepath);
-asmlinkage long sys_scan_processes(void);
+asmlinkage long sys_scan_processes(struct process_info __user *buffer, int *count);
 #endif
