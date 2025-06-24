@@ -17,41 +17,13 @@
 #include <linux/seq_file.h>
 #include <linux/sched/mm.h>
 #include <linux/sched/task.h>
+#include <linux/usac_syscalls.h>
+#include <linux/types.h>
 
 // Definitions for scan file
 #define MAX_PATH 256
 #define HASH_LEN 33 // MD5 hash in hex (32 chars + null terminator)
 #define MD5_DIGEST_LENGTH 16 // MD5 hash size in bytes
-
-// Structure for page faults data
-struct page_faults_data {
-    unsigned long minor_faults;
-    unsigned long major_faults;
-};
-
-struct process_info {
-    pid_t pid;
-    pid_t ppid;
-    char comm[TASK_COMM_LEN];
-    long state;
-    unsigned long vsize;
-    unsigned long rss;
-    int nice;
-    unsigned long start_time;
-    unsigned long utime;
-    unsigned long stime;
-};
-
-
-// Structure for antivirus stats
-struct antivirus_stats {
-    unsigned long mem_used;
-    unsigned long mem_free;
-    unsigned long mem_cache;
-    unsigned long swap_used;
-    unsigned long active_pages;
-    unsigned long inactive_pages;
-};
 
 // Structure for signatures simulation
 struct signature {
@@ -146,61 +118,78 @@ static int lookup_hash(const char *hash)
     return 0; // Clean by default
 }
 
-// List Process
+// Get task state
 static long get_task_state(struct task_struct *task)
 {
-
     if (task_is_running(task))
         return TASK_RUNNING;
     else if (task_is_stopped_or_traced(task))
         return TASK_STOPPED;
     else
-        return TASK_INTERRUPTIBLE;  
+        return TASK_INTERRUPTIBLE;
 }
 
-SYSCALL_DEFINE0(scan_processes)
+// Syscall: scan_processes
+SYSCALL_DEFINE2(scan_processes, struct process_info __user *, buffer, int __user *, count)
 {
     struct task_struct *task;
     struct process_info *proc_array;
-    int count = 0, i = 0;
+    int proc_count = 0, i = 0;
     struct mm_struct *mm;
-    
-    printk(KERN_INFO "sys_scan_processes: Iniciando escaneo de procesos\n");
-    
-   
+    int user_buffer_size;
+
+    printk(KERN_INFO "[USAC-AV] sys_scan_processes: Starting process scan\n");
+
+    if (!buffer || !count) {
+        printk(KERN_ERR "[USAC-AV] sys_scan_processes: Invalid parameters\n");
+        return -EINVAL;
+    }
+
+    if (copy_from_user(&user_buffer_size, count, sizeof(int))) {
+        printk(KERN_ERR "[USAC-AV] sys_scan_processes: Error reading buffer size\n");
+        return -EFAULT;
+    }
+
     rcu_read_lock();
     for_each_process(task) {
-        count++;
+        proc_count++;
     }
     rcu_read_unlock();
-    
-    if (count == 0) {
-        printk(KERN_WARNING "sys_scan_processes: No se encontraron procesos\n");
+
+    if (proc_count == 0) {
+        printk(KERN_WARNING "[USAC-AV] sys_scan_processes: No processes found\n");
+        if (copy_to_user(count, &proc_count, sizeof(int)))
+            return -EFAULT;
         return 0;
     }
-    
 
-    proc_array = kmalloc(count * sizeof(struct process_info), GFP_KERNEL);
+    if (user_buffer_size < proc_count) {
+        printk(KERN_INFO "[USAC-AV] sys_scan_processes: Buffer too small. Needed: %d, Provided: %d\n",
+               proc_count, user_buffer_size);
+        if (copy_to_user(count, &proc_count, sizeof(int)))
+            return -EFAULT;
+        return -ENOSPC;
+    }
+
+    proc_array = kmalloc_array(proc_count, sizeof(struct process_info), GFP_KERNEL);
     if (!proc_array) {
-        printk(KERN_ERR "sys_scan_processes: Error al asignar memoria\n");
+        printk(KERN_ERR "[USAC-AV] sys_scan_processes: Memory allocation failed\n");
         return -ENOMEM;
     }
-    
 
     rcu_read_lock();
     for_each_process(task) {
-        if (i >= count) break;
-        
+        if (i >= proc_count) break;
+
         proc_array[i].pid = task->pid;
         proc_array[i].ppid = task->real_parent ? task->real_parent->pid : 0;
-        strncpy(proc_array[i].comm, task->comm, TASK_COMM_LEN);
+        strscpy(proc_array[i].comm, task->comm, TASK_COMM_LEN);
         proc_array[i].state = get_task_state(task);
         proc_array[i].nice = task_nice(task);
         proc_array[i].start_time = task->start_time;
         proc_array[i].utime = task->utime;
         proc_array[i].stime = task->stime;
-        
-  
+
         mm = task->mm;
         if (mm) {
             proc_array[i].vsize = mm->total_vm;
@@ -209,31 +198,27 @@ SYSCALL_DEFINE0(scan_processes)
             proc_array[i].vsize = 0;
             proc_array[i].rss = 0;
         }
-        
+
         i++;
     }
     rcu_read_unlock();
-    
 
-    printk(KERN_INFO "=== SCAN DE PROCESOS ===\n");
-    printk(KERN_INFO "Total de procesos: %d\n", count);
-    printk(KERN_INFO "PID\tPPID\tNOMBRE\t\tESTADO\tVSIZE\tRSS\tNICE\n");
-    
-    for (i = 0; i < count; i++) {
-        printk(KERN_INFO "%d\t%d\t%-15s\t%ld\t%lu\t%lu\t%d\n",
-               proc_array[i].pid,
-               proc_array[i].ppid,
-               proc_array[i].comm,
-               proc_array[i].state,
-               proc_array[i].vsize,
-               proc_array[i].rss,
-               proc_array[i].nice);
+    if (copy_to_user(buffer, proc_array, proc_count * sizeof(struct process_info))) {
+        printk(KERN_ERR "[USAC-AV] sys_scan_processes: Error copying to user\n");
+        kfree(proc_array);
+        return -EFAULT;
     }
-    
-    printk(KERN_INFO "=== FIN SCAN PROCESOS ===\n");
-    
+
+    if (copy_to_user(count, &proc_count, sizeof(int))) {
+        printk(KERN_ERR "[USAC-AV] sys_scan_processes: Error copying count to user\n");
+        kfree(proc_array);
+        return -EFAULT;
+    }
+
+    printk(KERN_INFO "[USAC-AV] sys_scan_processes: %d processes copied successfully\n", proc_count);
+
     kfree(proc_array);
-    return count;
+    return proc_count;
 }
 
 // Syscall: get_page_faults
@@ -294,7 +279,7 @@ SYSCALL_DEFINE1(antivirus_stats, struct antivirus_stats __user *, stats)
                             global_node_page_state(NR_INACTIVE_FILE);
 
     if (copy_to_user(stats, &kstats, sizeof(struct antivirus_stats))) {
-        pr_err("[USAC-AV] antivirus_stats: Failed to copy stats to user space\n");
+        printk(KERN_ERR "[USAC-AV] antivirus_stats: Failed to copy stats to user space\n");
         return -EFAULT;
     }
 
@@ -316,7 +301,7 @@ SYSCALL_DEFINE1(quarantine_file, const char __user *, path)
     if (!kpath)
         return -ENOMEM;
     if (strncpy_from_user(kpath, path, PATH_MAX) < 0) {
-        pr_err("[USAC-AV] quarantine_file: Failed to copy path from user space\n");
+        printk(KERN_ERR "[USAC-AV] quarantine_file: Failed to copy path from user space\n");
         ret = -EFAULT;
         goto out_kpath;
     }
@@ -324,7 +309,7 @@ SYSCALL_DEFINE1(quarantine_file, const char __user *, path)
 
     filename = strrchr(kpath, '/');
     if (!filename) {
-        pr_err("[USAC-AV] quarantine_file: Invalid path\n");
+        printk(KERN_ERR "[USAC-AV] quarantine_file: Invalid path\n");
         ret = -EINVAL;
         goto out_kpath;
     }
@@ -332,22 +317,22 @@ SYSCALL_DEFINE1(quarantine_file, const char __user *, path)
 
     ret = kern_path(kpath, LOOKUP_FOLLOW, &src_path);
     if (ret) {
-        pr_err("[USAC-AV] quarantine_file: Failed to resolve source path %s\n", kpath);
+        printk(KERN_ERR "[USAC-AV] quarantine_file: Failed to resolve source path %s\n", kpath);
         goto out_kpath;
     }
 
-    ret = kern_path("/var/quarantine", LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &dest_dir);
+    ret = kern_path(QUARANTINE_PATH, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &dest_dir);
     if (ret) {
         ret = kern_path("/var", LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &parent_path);
         if (ret) {
-            pr_err("[USAC-AV] quarantine_file: Failed to resolve /var\n");
+            printk(KERN_ERR "[USAC-AV] quarantine_file: Failed to resolve /var\n");
             path_put(&src_path);
             goto out_kpath;
         }
 
-        quarantine_dentry = kern_path_create(AT_FDCWD, "/var/quarantine", &parent_path, 0700);
+        quarantine_dentry = kern_path_create(AT_FDCWD, QUARANTINE_PATH, &parent_path, 0700);
         if (IS_ERR(quarantine_dentry)) {
-            pr_err("[USAC-AV] quarantine_file: Failed to create quarantine dentry\n");
+            printk(KERN_ERR "[USAC-AV] quarantine_file: Failed to create quarantine dentry\n");
             path_put(&src_path);
             path_put(&parent_path);
             ret = PTR_ERR(quarantine_dentry);
@@ -356,7 +341,7 @@ SYSCALL_DEFINE1(quarantine_file, const char __user *, path)
 
         ret = vfs_mkdir(idmap, d_inode(parent_path.dentry), quarantine_dentry, 0700);
         if (ret) {
-            pr_err("[USAC-AV] quarantine_file: Failed to create /var/quarantine\n");
+            printk(KERN_ERR "[USAC-AV] quarantine_file: Failed to create /var/quarantine\n");
             path_put(&src_path);
             path_put(&parent_path);
             dput(quarantine_dentry);
@@ -366,19 +351,19 @@ SYSCALL_DEFINE1(quarantine_file, const char __user *, path)
         path_put(&parent_path);
         dput(quarantine_dentry);
 
-        ret = kern_path("/var/quarantine", LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &dest_dir);
+        ret = kern_path(QUARANTINE_PATH, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &dest_dir);
         if (ret) {
-            pr_err("[USAC-AV] quarantine_file: Failed to resolve /var/quarantine after creation\n");
+            printk(KERN_ERR "[USAC-AV] quarantine_file: Failed to resolve /var/quarantine after creation\n");
             path_put(&src_path);
             goto out_kpath;
         }
     }
 
-    snprintf(dest_path, PATH_MAX, "%s/%s", "/var/quarantine", filename);
+    snprintf(dest_path, PATH_MAX, "%s%s", QUARANTINE_PATH, filename);
 
     dest_dentry = kern_path_create(AT_FDCWD, dest_path, &dest_dir, 0);
     if (IS_ERR(dest_dentry)) {
-        pr_err("[USAC-AV] quarantine_file: Failed to create destination path %s\n", dest_path);
+        printk(KERN_ERR "[USAC-AV] quarantine_file: Failed to create destination path %s\n", dest_path);
         path_put(&src_path);
         path_put(&dest_dir);
         ret = PTR_ERR(dest_dentry);
@@ -396,9 +381,19 @@ SYSCALL_DEFINE1(quarantine_file, const char __user *, path)
 
     ret = vfs_rename(&rd);
     if (ret) {
-        pr_err("[USAC-AV] quarantine_file: Failed to move file to %s\n", dest_path);
+        printk(KERN_ERR "[USAC-AV] quarantine_file: Failed to move file to %s\n", dest_path);
         dput(dest_dentry);
         goto out_paths;
+    }
+
+    // Create .meta file
+    char meta_path[PATH_MAX];
+    struct file *meta_file;
+    snprintf(meta_path, PATH_MAX, "%s%s%s", QUARANTINE_PATH, filename, META_SUFFIX);
+    meta_file = filp_open(meta_path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (!IS_ERR(meta_file)) {
+        kernel_write(meta_file, kpath, strlen(kpath), &meta_file->f_pos);
+        filp_close(meta_file, NULL);
     }
 
     path_put(&src_path);
@@ -457,5 +452,213 @@ close_file:
     filp_close(file, NULL);
 free_kpath:
     kfree(kpath);
+    return ret;
+}
+
+// Syscall: restore_file
+SYSCALL_DEFINE1(restore_file, const char __user *, filename)
+{
+    char *kfilename, *src_path, *meta_path, *original_path;
+    struct file *meta_file;
+    struct path src, dest_dir;
+    struct dentry *dest_dentry;
+    struct renamedata rd;
+    struct mnt_idmap *idmap = &nop_mnt_idmap;
+    int ret = 0;
+    loff_t pos = 0;
+
+    kfilename = kzalloc(MAX_PATH_LEN, GFP_KERNEL);
+    src_path = kzalloc(MAX_PATH_LEN, GFP_KERNEL);
+    meta_path = kzalloc(MAX_PATH_LEN, GFP_KERNEL);
+    original_path = kzalloc(MAX_PATH_LEN, GFP_KERNEL);
+
+    if (!kfilename || !src_path || !meta_path || !original_path) {
+        ret = -ENOMEM;
+        goto out_free;
+    }
+
+    if (copy_from_user(kfilename, filename, MAX_PATH_LEN)) {
+        ret = -EFAULT;
+        goto out_free;
+    }
+    kfilename[MAX_PATH_LEN - 1] = '\0';
+
+    snprintf(src_path, MAX_PATH_LEN, "%s%s", QUARANTINE_PATH, kfilename);
+    snprintf(meta_path, MAX_PATH_LEN, "%s%s%s", QUARANTINE_PATH, kfilename, META_SUFFIX);
+
+    meta_file = filp_open(meta_path, O_RDONLY, 0);
+    if (IS_ERR(meta_file)) {
+        printk(KERN_ERR "[USAC-AV] restore_file: Unable to open metadata file %s: %ld\n", meta_path, PTR_ERR(meta_file));
+        ret = PTR_ERR(meta_file);
+        goto out_free;
+    }
+
+    ret = kernel_read(meta_file, original_path, MAX_PATH_LEN - 1, &pos);
+    filp_close(meta_file, NULL);
+
+    if (ret <= 0) {
+        printk(KERN_ERR "[USAC-AV] restore_file: Unable to read original path: %d\n", ret);
+        ret = ret < 0 ? ret : -EIO;
+        goto out_free;
+    }
+
+    original_path[ret] = '\0';
+    original_path[strcspn(original_path, "\n")] = '\0';
+
+    ret = kern_path(src_path, LOOKUP_FOLLOW, &src);
+    if (ret) {
+        printk(KERN_ERR "[USAC-AV] restore_file: Failed to resolve source path %s: %d\n", src_path, ret);
+        goto out_free;
+    }
+
+    char *dest_dirname = strrchr(original_path, '/');
+    if (!dest_dirname) {
+        printk(KERN_ERR "[USAC-AV] restore_file: Invalid original path %s\n", original_path);
+        ret = -EINVAL;
+        path_put(&src);
+        goto out_free;
+    }
+    *dest_dirname = '\0';
+    ret = kern_path(original_path, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &dest_dir);
+    *dest_dirname = '/';
+    if (ret) {
+        printk(KERN_ERR "[USAC-AV] restore_file: Failed to resolve destination directory %s: %d\n", original_path, ret);
+        path_put(&src);
+        goto out_free;
+    }
+
+    dest_dentry = kern_path_create(AT_FDCWD, original_path, &dest_dir, 0);
+    if (IS_ERR(dest_dentry)) {
+        printk(KERN_ERR "[USAC-AV] restore_file: Failed to create destination path %s: %ld\n", original_path, PTR_ERR(dest_dentry));
+        path_put(&src);
+        path_put(&dest_dir);
+        ret = PTR_ERR(dest_dentry);
+        goto out_free;
+    }
+
+    rd.old_mnt_idmap = idmap;
+    rd.old_dir = d_inode(src.dentry->d_parent);
+    rd.old_dentry = src.dentry;
+    rd.new_mnt_idmap = idmap;
+    rd.new_dir = d_inode(dest_dir.dentry);
+    rd.new_dentry = dest_dentry;
+    rd.flags = 0;
+    rd.delegated_inode = NULL;
+
+    ret = vfs_rename(&rd);
+    if (ret) {
+        printk(KERN_ERR "[USAC-AV] restore_file: Failed to restore file to %s: %d\n", original_path, ret);
+        dput(dest_dentry);
+        path_put(&src);
+        path_put(&dest_dir);
+        goto out_free;
+    }
+
+    struct path meta;
+    ret = kern_path(meta_path, LOOKUP_FOLLOW, &meta);
+    if (!ret) {
+        vfs_unlink(idmap, d_inode(meta.dentry->d_parent), meta.dentry, NULL);
+        path_put(&meta);
+    }
+
+    printk(KERN_INFO "[USAC-AV] restore_file: File restored to %s\n", original_path);
+
+    path_put(&src);
+    path_put(&dest_dir);
+    dput(dest_dentry);
+
+out_free:
+    kfree(kfilename);
+    kfree(src_path);
+    kfree(meta_path);
+    kfree(original_path);
+    return ret;
+}
+
+// Syscall: get_quarantine_list
+// Callback for directory iteration
+struct get_quarantine_list_context {
+    struct dir_context ctx; // Must be first for container_of
+    char *kbuf;
+    size_t buf_size;
+    size_t offset;
+    int error;
+};
+
+static bool fill_quarantine_dir(struct dir_context *ctx, const char *name, int namlen,
+                                loff_t off, u64 ino, unsigned d_type)
+{
+    struct get_quarantine_list_context *qctx = container_of(ctx, struct get_quarantine_list_context, ctx);
+    
+    if (d_type != DT_REG || strstr(name, META_SUFFIX))
+        return false; // Skip non-regular files and .meta files
+
+    size_t entry_size = namlen + 1;
+    if (qctx->offset + entry_size > qctx->buf_size) {
+        qctx->error = -ENOBUFS;
+        return true; // Stop iteration
+    }
+
+    strncpy(qctx->kbuf + qctx->offset, name, namlen);
+    qctx->kbuf[qctx->offset + namlen] = '\0';
+    qctx->offset += entry_size;
+    return false;
+}
+
+// Syscall: get_quarantine_list
+SYSCALL_DEFINE2(get_quarantine_list, char __user *, user_buf, size_t, buf_size)
+{
+    struct path dir_path;
+    struct file *dir_file;
+    struct get_quarantine_list_context qctx = {
+        .ctx = {
+            .actor = fill_quarantine_dir,
+            .pos = 0
+        },
+        .kbuf = NULL,
+        .buf_size = buf_size,
+        .offset = 0,
+        .error = 0
+    };
+    int ret;
+
+    qctx.kbuf = kmalloc(buf_size, GFP_KERNEL);
+    if (!qctx.kbuf)
+        return -ENOMEM;
+
+    ret = kern_path(QUARANTINE_PATH, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &dir_path);
+    if (ret) {
+        printk(KERN_ERR "[USAC-AV] get_quarantine_list: Failed to open %s: %d\n", QUARANTINE_PATH, ret);
+        kfree(qctx.kbuf);
+        return ret;
+    }
+
+    dir_file = filp_open(QUARANTINE_PATH, O_RDONLY | O_DIRECTORY, 0);
+    if (IS_ERR(dir_file)) {
+        printk(KERN_ERR "[USAC-AV] get_quarantine_list: Failed to open directory: %ld\n", PTR_ERR(dir_file));
+        path_put(&dir_path);
+        kfree(qctx.kbuf);
+        return PTR_ERR(dir_file);
+    }
+
+    ret = iterate_dir(dir_file, &qctx.ctx);
+    if (ret || qctx.error) {
+        printk(KERN_ERR "[USAC-AV] get_quarantine_list: Failed to iterate directory: %d\n", ret ?: qctx.error);
+        ret = ret ?: qctx.error;
+        goto cleanup;
+    }
+
+    if (copy_to_user(user_buf, qctx.kbuf, qctx.offset)) {
+        printk(KERN_ERR "[USAC-AV] get_quarantine_list: Failed to copy to user\n");
+        ret = -EFAULT;
+        goto cleanup;
+    }
+
+    ret = qctx.offset;
+
+cleanup:
+    filp_close(dir_file, NULL);
+    path_put(&dir_path);
+    kfree(qctx.kbuf);
     return ret;
 }
