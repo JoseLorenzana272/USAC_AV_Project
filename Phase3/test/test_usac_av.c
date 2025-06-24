@@ -10,6 +10,7 @@
 #define SYS_QUARANTINE_FILE 551
 #define SYS_get_page_faults 552
 #define SYS_scan_file 553
+#define SYS_scan_processes 554
 
 // Structure for antivirus system statistics
 struct antivirus_stats {
@@ -89,7 +90,6 @@ int main(int argc, char *argv[]) {
             break;
         case 1:
             printf("⚠️ File is suspicious\n");
-            // Proceed to quarantine suspicious files
             ret = syscall(SYS_QUARANTINE_FILE, argv[2]);
             if (ret < 0) {
                 fprintf(stderr, "sys_quarantine_file failed: %s\n", strerror(errno));
@@ -99,7 +99,6 @@ int main(int argc, char *argv[]) {
             break;
         case 2:
             printf("❌ File is malicious\n");
-            // Quarantine malicious files
             ret = syscall(SYS_QUARANTINE_FILE, argv[2]);
             if (ret < 0) {
                 fprintf(stderr, "sys_quarantine_file failed: %s\n", strerror(errno));
@@ -111,6 +110,17 @@ int main(int argc, char *argv[]) {
             printf("❗ Unknown scan result: %ld\n", ret);
             return 1;
     }
+
+    // Call sys_scan_processes
+    printf("\nScanning all processes...\n");
+    ret = syscall(SYS_scan_processes);
+    if (ret < 0) {
+        fprintf(stderr, "sys_scan_processes failed: %s\n", strerror(errno));
+        return 1;
+    }
+    printf("Total processes scanned: %ld\n", ret);
+    printf("Process details (from kernel log):\n");
+    system("dmesg | grep USAC-AV");
 
     return 0;
 }
