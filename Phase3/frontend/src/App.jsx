@@ -28,6 +28,7 @@ import {
   LogOut,
   Server,
   FileX,
+  RotateCcw,
 } from "lucide-react"
 
 // Register Chart.js components
@@ -49,6 +50,10 @@ function App() {
       { name: "Process B", pid: 5678, mem_percent: 23.45 },
       { name: "Process C", pid: 9101, mem_percent: 34.56 },
     ],
+    quarantine_list: [
+      { filename: "test1.txt", original_path: "/tmp/test1.txt" },
+      { filename: "malicious.exe", original_path: "/bin/malicious.exe" },
+    ],
   })
 
   // State for quarantine form
@@ -56,6 +61,7 @@ function App() {
   const [quarantineMessage, setQuarantineMessage] = useState("")
   const [messageType, setMessageType] = useState("")
   const [isScanning, setIsScanning] = useState(false)
+  const [restoringFiles, setRestoringFiles] = useState(new Set())
 
   // State for memory usage history
   const [memoryHistory, setMemoryHistory] = useState([])
@@ -65,7 +71,7 @@ function App() {
   const [systemStatus, setSystemStatus] = useState({
     threats: 0,
     scanned: 1247,
-    quarantined: 3,
+    quarantined: 2, // Matches initial quarantine_list length
     uptime: "2d 14h 32m",
   })
 
@@ -85,6 +91,10 @@ function App() {
         { name: "Process B", pid: 5678, mem_percent: Math.random() * 100 },
         { name: "Process C", pid: 9101, mem_percent: Math.random() * 100 },
       ],
+      quarantine_list: [
+        { filename: "test1.txt", original_path: "/tmp/test1.txt" },
+        { filename: "malicious.exe", original_path: "/bin/malicious.exe" },
+      ],
     }
   }
 
@@ -93,41 +103,32 @@ function App() {
     const initialMetrics = generateFakeMetrics()
     setMetrics(initialMetrics)
 
-    const initialHistory = Array.from({ length: 20 }, (_, i) => Math.floor(Math.random() * 2000000) + 1000000)
+    const initialHistory = Array.from({ length: 20 }, () => Math.floor(Math.random() * 2000000) + 1000000)
     const initialLabels = Array.from({ length: 20 }, (_, i) =>
       new Date(Date.now() - (19 - i) * 5000).toLocaleTimeString("en-US", {
         hour12: false,
         minute: "2-digit",
         second: "2-digit",
-      }),
+      })
     )
 
     setMemoryHistory(initialHistory)
     setTimeLabels(initialLabels)
 
     const interval = setInterval(() => {
-      // TODO: Replace with actual API call to Flask backend
-      // fetch('/api/stats')
-      //   .then(response => response.json())
-      //   .then(data => setMetrics(data))
-      //   .catch(error => console.error('Error fetching metrics:', error));
-
       const newMetrics = generateFakeMetrics()
       setMetrics(newMetrics)
 
-      setMemoryHistory((prev) => {
-        const newHistory = [...prev.slice(1), newMetrics.mem_used]
-        return newHistory
-      })
+      setMemoryHistory((prev) => [...prev.slice(1), newMetrics.mem_used])
 
-      setTimeLabels((prev) => {
-        const newTime = new Date().toLocaleTimeString("en-US", {
+      setTimeLabels((prev) => [
+        ...prev.slice(1),
+        new Date().toLocaleTimeString("en-US", {
           hour12: false,
           minute: "2-digit",
           second: "2-digit",
-        })
-        return [...prev.slice(1), newTime]
-      })
+        }),
+      ])
 
       // Update system status occasionally
       if (Math.random() > 0.7) {
@@ -158,19 +159,12 @@ function App() {
 
     // Simulate scanning delay
     setTimeout(() => {
-      // TODO: Replace with actual API call to Flask backend
-      // const response = await fetch('/api/quarantine', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ path: filePath }),
-      // });
-      // const result = await response.json();
-
-      const isSuccess = Math.random() > 0.3
+      const isSuccess = Math.random() > 0.3  // 70% success rate
+      const filename = filePath.split("/").pop()
       const result = isSuccess
         ? {
             status: "success",
-            message: `File successfully quarantined to /var/quarantine/${filePath.split("/").pop()}`,
+            message: `File ${filename} successfully quarantined to /var/quarantine/${filename}`,
           }
         : {
             status: "error",
@@ -183,7 +177,55 @@ function App() {
 
       if (result.status === "success") {
         setFilePath("")
-        setSystemStatus((prev) => ({ ...prev, quarantined: prev.quarantined + 1 }))
+        setMetrics((prev) => ({
+          ...prev,
+          quarantine_list: [...prev.quarantine_list, { filename, original_path: filePath }],
+        }))
+        setSystemStatus((prev) => ({ ...prev, quarantined: prev.quarantine_list.length + 1 }))
+      }
+    }, 2000)
+  }
+
+  // Handle restore file action
+  const handleRestore = (filename) => {
+    if (!confirm(`Are you sure you want to restore ${filename}?`)) return
+    setRestoringFiles((prev) => new Set(prev).add(filename))
+    setQuarantineMessage(`Restoring ${filename}...`)
+    setMessageType("scanning")
+
+    // Simulate restoration delay
+    setTimeout(() => {
+      const isSuccess = Math.random() > 0.2 // 80% success rate
+      const result = isSuccess
+        ? {
+            status: "success",
+            message: `File ${filename} restored successfully`,
+          }
+        : {
+            status: "error",
+            message: `Failed to restore ${filename}: File not found`,
+          }
+
+      setQuarantineMessage(result.message)
+      setMessageType(result.status)
+      setRestoringFiles((prev) => {
+        const next = new Set(prev)
+        next.delete(filename)
+        return next
+      })
+
+      if (result.status === "success") {
+        setMetrics((prev) => {
+          const newQuarantineList = prev.quarantine_list.filter((f) => f.filename !== filename)
+          setSystemStatus((prevStatus) => ({
+            ...prevStatus,
+            quarantined: newQuarantineList.length, // Use new list length
+          }))
+          return {
+            ...prev,
+            quarantine_list: newQuarantineList,
+          }
+        })
       }
     }, 2000)
   }
@@ -446,9 +488,8 @@ function App() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {metricCards.map((card, index) => {
+            {metricCards.map((card) => {
               const Icon = card.icon
-
               return (
                 <div
                   key={card.title}
@@ -528,7 +569,7 @@ function App() {
               </div>
             </div>
 
-            <form onSubmit={handleQuarantine} className="max-w-2xl">
+            <form onSubmit={handleQuarantine} className="max-w-2xl mb-6">
               <div className="mb-4">
                 <label htmlFor="filePath" className="block text-sm font-medium text-zinc-300 mb-2">
                   File Path
@@ -570,8 +611,8 @@ function App() {
                   messageType === "success"
                     ? "bg-green-900/20 border-green-800 text-green-200"
                     : messageType === "error"
-                      ? "bg-red-900/20 border-red-800 text-red-200"
-                      : "bg-blue-900/20 border-blue-800 text-blue-200"
+                    ? "bg-red-900/20 border-red-800 text-red-200"
+                    : "bg-blue-900/20 border-blue-800 text-blue-200"
                 }`}
               >
                 <div className="flex items-center space-x-2">
@@ -584,6 +625,52 @@ function App() {
                 </div>
               </div>
             )}
+
+            {/* Quarantined Files Table */}
+            <div className="mt-6">
+              <h3 className="text-lg font-semibold text-zinc-100 mb-2">Quarantined Files</h3>
+              <p className="text-zinc-400 mb-4">List of files in quarantine</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm text-zinc-300">
+                  <thead>
+                    <tr className="border-b border-zinc-800">
+                      <th className="py-3 px-4">Filename</th>
+                      <th className="py-3 px-4">Original Path</th>
+                      <th className="py-3 px-4">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metrics.quarantine_list.map((file, index) => (
+                      <tr key={index} className="border-b border-zinc-800/50 hover:bg-zinc-800">
+                        <td className="py-3 px-4">{file.filename}</td>
+                        <td className="py-3 px-4">{file.original_path}</td>
+                        <td className="py-3 px-4">
+                          <button
+                            onClick={() => handleRestore(file.filename)}
+                            disabled={restoringFiles.has(file.filename)}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                          >
+                            {restoringFiles.has(file.filename) ? (
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                            ) : (
+                              <RotateCcw className="w-4 h-4" />
+                            )}
+                            <span>Restore</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {metrics.quarantine_list.length === 0 && (
+                      <tr>
+                        <td colSpan="3" className="py-3 px-4 text-center text-zinc-500">
+                          No files in quarantine
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </section>
 
