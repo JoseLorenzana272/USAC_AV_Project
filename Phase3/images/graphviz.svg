@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1354pt" height="218pt" viewBox="0.00 0.00 1354.32 218.00">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 214)">
+<title>USAC_AV_Flujo</title>
+<polygon fill="white" stroke="none" points="-4,4 -4,-214 1350.32,-214 1350.32,4 -4,4"/>
+<g id="clust1" class="cluster">
+<title>cluster_client</title>
+<polygon fill="none" stroke="black" points="8,-17 8,-202 534.71,-202 534.71,-17 8,-17"/>
+<text text-anchor="middle" x="271.35" y="-185.4" font-family="Times,serif" font-size="14.00">Cliente C (intermedio)</text>
+</g>
+<g id="clust2" class="cluster">
+<title>cluster_backend</title>
+<polygon fill="none" stroke="black" points="554.71,-34 554.71,-185 1164.14,-185 1164.14,-34 554.71,-34"/>
+<text text-anchor="middle" x="859.43" y="-168.4" font-family="Times,serif" font-size="14.00">Backend Flask (main.py)</text>
+</g>
+<g id="clust3" class="cluster">
+<title>cluster_ui</title>
+<polygon fill="none" stroke="black" points="1184.14,-8 1184.14,-145 1346.32,-145 1346.32,-8 1184.14,-8"/>
+<text text-anchor="middle" x="1265.23" y="-128.4" font-family="Times,serif" font-size="14.00">Dashboard o Visualizador</text>
+</g>
+<!-- syscall_scan -->
+<g id="node1" class="node">
+<title>syscall_scan</title>
+<polygon fill="lightgray" stroke="lightgray" points="177.8,-61 17.56,-61 17.56,-25 177.8,-25 177.8,-61"/>
+<text text-anchor="middle" x="97.68" y="-38.8" font-family="Times,serif" font-size="14.00">sys_scan_processes (551)</text>
+</g>
+<!-- create_json -->
+<g id="node4" class="node">
+<title>create_json</title>
+<polygon fill="lightgray" stroke="lightgray" points="350.31,-115 215.36,-115 215.36,-79 350.31,-79 350.31,-115"/>
+<text text-anchor="middle" x="282.83" y="-92.8" font-family="Times,serif" font-size="14.00">create_system_json()</text>
+</g>
+<!-- syscall_scan&#45;&gt;create_json -->
+<g id="edge1" class="edge">
+<title>syscall_scan-&gt;create_json</title>
+<path fill="none" stroke="black" d="M161.2,-61.43C176.44,-65.93 192.88,-70.77 208.57,-75.4"/>
+<polygon fill="black" stroke="black" points="207.25,-78.66 217.83,-78.13 209.23,-71.95 207.25,-78.66"/>
+</g>
+<!-- syscall_faults -->
+<g id="node2" class="node">
+<title>syscall_faults</title>
+<polygon fill="lightgray" stroke="lightgray" points="179.36,-115 16,-115 16,-79 179.36,-79 179.36,-115"/>
+<text text-anchor="middle" x="97.68" y="-92.8" font-family="Times,serif" font-size="14.00">sys_get_page_faults (552)</text>
+</g>
+<!-- syscall_faults&#45;&gt;create_json -->
+<g id="edge2" class="edge">
+<title>syscall_faults-&gt;create_json</title>
+<path fill="none" stroke="black" d="M179.81,-97C187.72,-97 195.73,-97 203.61,-97"/>
+<polygon fill="black" stroke="black" points="203.52,-100.5 213.52,-97 203.52,-93.5 203.52,-100.5"/>
+</g>
+<!-- syscall_stats -->
+<g id="node3" class="node">
+<title>syscall_stats</title>
+<polygon fill="lightgray" stroke="lightgray" points="175.48,-169 19.88,-169 19.88,-133 175.48,-133 175.48,-169"/>
+<text text-anchor="middle" x="97.68" y="-146.8" font-family="Times,serif" font-size="14.00">sys_antivirus_stats (557)</text>
+</g>
+<!-- syscall_stats&#45;&gt;create_json -->
+<g id="edge3" class="edge">
+<title>syscall_stats-&gt;create_json</title>
+<path fill="none" stroke="black" d="M161.2,-132.57C176.44,-128.07 192.88,-123.23 208.57,-118.6"/>
+<polygon fill="black" stroke="black" points="209.23,-122.05 217.83,-115.87 207.25,-115.34 209.23,-122.05"/>
+</g>
+<!-- send_data -->
+<g id="node5" class="node">
+<title>send_data</title>
+<polygon fill="lightgray" stroke="lightgray" points="526.71,-115 386.31,-115 386.31,-79 526.71,-79 526.71,-115"/>
+<text text-anchor="middle" x="456.51" y="-92.8" font-family="Times,serif" font-size="14.00">send_data_to_server()</text>
+</g>
+<!-- create_json&#45;&gt;send_data -->
+<g id="edge4" class="edge">
+<title>create_json-&gt;send_data</title>
+<path fill="none" stroke="black" d="M350.7,-97C358.57,-97 366.67,-97 374.7,-97"/>
+<polygon fill="black" stroke="black" points="374.48,-100.5 384.48,-97 374.48,-93.5 374.48,-100.5"/>
+</g>
+<!-- receive_stats -->
+<g id="node6" class="node">
+<title>receive_stats</title>
+<polygon fill="lightgray" stroke="lightgray" points="666.21,-115 562.71,-115 562.71,-79 666.21,-79 666.21,-115"/>
+<text text-anchor="middle" x="614.46" y="-92.8" font-family="Times,serif" font-size="14.00">POST /api/stats</text>
+</g>
+<!-- send_data&#45;&gt;receive_stats -->
+<g id="edge5" class="edge">
+<title>send_data-&gt;receive_stats</title>
+<path fill="none" stroke="black" d="M526.82,-97C534.91,-97 543.13,-97 551.11,-97"/>
+<polygon fill="black" stroke="black" points="551.1,-100.5 561.1,-97 551.1,-93.5 551.1,-100.5"/>
+</g>
+<!-- save_db -->
+<g id="node7" class="node">
+<title>save_db</title>
+<polygon fill="lightgray" stroke="lightgray" points="993.74,-98 872.76,-98 872.76,-62 993.74,-62 993.74,-98"/>
+<text text-anchor="middle" x="933.25" y="-75.8" font-family="Times,serif" font-size="14.00">save_stats_to_db()</text>
+</g>
+<!-- receive_stats&#45;&gt;save_db -->
+<g id="edge6" class="edge">
+<title>receive_stats-&gt;save_db</title>
+<path fill="none" stroke="black" d="M666.71,-95.02C711.02,-93.23 776.78,-90.35 834.04,-87 842.74,-86.49 851.87,-85.91 860.91,-85.3"/>
+<polygon fill="black" stroke="black" points="861.03,-88.8 870.77,-84.62 860.55,-81.82 861.03,-88.8"/>
+</g>
+<!-- analyze -->
+<g id="node8" class="node">
+<title>analyze</title>
+<polygon fill="lightgray" stroke="lightgray" points="834.04,-152 702.21,-152 702.21,-116 834.04,-116 834.04,-152"/>
+<text text-anchor="middle" x="768.13" y="-129.8" font-family="Times,serif" font-size="14.00">analyze_anomalies()</text>
+</g>
+<!-- receive_stats&#45;&gt;analyze -->
+<g id="edge7" class="edge">
+<title>receive_stats-&gt;analyze</title>
+<path fill="none" stroke="black" d="M666.39,-109.42C674.2,-111.33 682.4,-113.33 690.62,-115.34"/>
+<polygon fill="black" stroke="black" points="689.78,-118.73 700.32,-117.7 691.44,-111.93 689.78,-118.73"/>
+</g>
+<!-- ws_emit -->
+<g id="node10" class="node">
+<title>ws_emit</title>
+<polygon fill="lightgray" stroke="lightgray" points="827.25,-78 709.01,-78 709.01,-42 827.25,-42 827.25,-78"/>
+<text text-anchor="middle" x="768.13" y="-55.8" font-family="Times,serif" font-size="14.00">WebSocket emit()</text>
+</g>
+<!-- receive_stats&#45;&gt;ws_emit -->
+<g id="edge9" class="edge">
+<title>receive_stats-&gt;ws_emit</title>
+<path fill="none" stroke="black" d="M666.39,-84.58C676.48,-82.11 687.23,-79.49 697.81,-76.91"/>
+<polygon fill="black" stroke="black" points="698.39,-80.37 707.28,-74.6 696.73,-73.57 698.39,-80.37"/>
+</g>
+<!-- sqlite -->
+<g id="node11" class="node">
+<title>sqlite</title>
+<polygon fill="lightgray" stroke="lightgray" points="1156.14,-111.8 1032.45,-111.8 1032.45,-70.2 1156.14,-70.2 1156.14,-111.8"/>
+<text text-anchor="middle" x="1094.3" y="-95.2" font-family="Times,serif" font-size="14.00">Data JSON</text>
+<text text-anchor="middle" x="1094.3" y="-78.4" font-family="Times,serif" font-size="14.00">(usac_antivirus.db)</text>
+</g>
+<!-- save_db&#45;&gt;sqlite -->
+<g id="edge10" class="edge">
+<title>save_db-&gt;sqlite</title>
+<path fill="none" stroke="black" d="M993.92,-84.13C1002.66,-84.73 1011.74,-85.36 1020.71,-85.98"/>
+<polygon fill="black" stroke="black" points="1020.23,-89.46 1030.45,-86.65 1020.71,-82.47 1020.23,-89.46"/>
+</g>
+<!-- alerts -->
+<g id="node9" class="node">
+<title>alerts</title>
+<polygon fill="lightgray" stroke="lightgray" points="996.45,-152 870.04,-152 870.04,-116 996.45,-116 996.45,-152"/>
+<text text-anchor="middle" x="933.25" y="-129.8" font-family="Times,serif" font-size="14.00">save_alerts_to_db()</text>
+</g>
+<!-- analyze&#45;&gt;alerts -->
+<g id="edge8" class="edge">
+<title>analyze-&gt;alerts</title>
+<path fill="none" stroke="black" d="M834.54,-134C842.34,-134 850.34,-134 858.25,-134"/>
+<polygon fill="black" stroke="black" points="858.23,-137.5 868.23,-134 858.23,-130.5 858.23,-137.5"/>
+</g>
+<!-- alerts&#45;&gt;sqlite -->
+<g id="edge11" class="edge">
+<title>alerts-&gt;sqlite</title>
+<path fill="none" stroke="black" d="M996.65,-117.13C1004.67,-114.96 1012.93,-112.73 1021.09,-110.52"/>
+<polygon fill="black" stroke="black" points="1021.91,-113.92 1030.65,-107.94 1020.09,-107.17 1021.91,-113.92"/>
+</g>
+<!-- ws_client -->
+<g id="node13" class="node">
+<title>ws_client</title>
+<polygon fill="lightgray" stroke="lightgray" points="1308.69,-52 1220.77,-52 1220.77,-16 1308.69,-16 1308.69,-52"/>
+<text text-anchor="middle" x="1264.73" y="-29.8" font-family="Times,serif" font-size="14.00">WebSocket /</text>
+</g>
+<!-- ws_emit&#45;&gt;ws_client -->
+<g id="edge13" class="edge">
+<title>ws_emit-&gt;ws_client</title>
+<path fill="none" stroke="black" d="M827.55,-55.74C841.47,-54.78 856.28,-53.81 870.04,-53 991.06,-45.88 1133.12,-39.52 1209.14,-36.27"/>
+<polygon fill="black" stroke="black" points="1208.96,-39.78 1218.8,-35.86 1208.66,-32.79 1208.96,-39.78"/>
+</g>
+<!-- api_get -->
+<g id="node12" class="node">
+<title>api_get</title>
+<polygon fill="lightgray" stroke="lightgray" points="1315.69,-111.8 1213.78,-111.8 1213.78,-70.2 1315.69,-70.2 1315.69,-111.8"/>
+<text text-anchor="middle" x="1264.73" y="-95.2" font-family="Times,serif" font-size="14.00">GET /api/stats</text>
+<text text-anchor="middle" x="1264.73" y="-78.4" font-family="Times,serif" font-size="14.00">GET /api/alerts</text>
+</g>
+<!-- sqlite&#45;&gt;api_get -->
+<g id="edge12" class="edge">
+<title>sqlite-&gt;api_get</title>
+<path fill="none" stroke="black" d="M1156.58,-91C1171.42,-91 1187.29,-91 1202.15,-91"/>
+<polygon fill="black" stroke="black" points="1201.76,-94.5 1211.76,-91 1201.76,-87.5 1201.76,-94.5"/>
+</g>
+</g>
+</svg>
