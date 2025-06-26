@@ -17,6 +17,7 @@ import os
 from collections import deque
 import signal
 import sys
+import subprocess
 
 # Configuración
 app = Flask(__name__)
@@ -35,9 +36,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Variables globales para almacenar datos en memoria
+# Variables globales
 latest_stats = {}
-stats_history = deque(maxlen=100)  # Últimas 100 lecturas
+stats_history = deque(maxlen=100)
 connected_clients = set()
 db_lock = threading.Lock()
 
@@ -45,12 +46,9 @@ db_lock = threading.Lock()
 DB_FILE = 'usac_antivirus.db'
 
 def init_database():
-    """Inicializar base de datos SQLite"""
     try:
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
-            
-            # Tabla para estadísticas del sistema
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS system_stats (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,8 +63,6 @@ def init_database():
                     paginas_inactivas INTEGER
                 )
             ''')
-            
-            # Tabla para procesos
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS processes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,8 +77,6 @@ def init_database():
                     FOREIGN KEY (stats_id) REFERENCES system_stats (id)
                 )
             ''')
-            
-            # Tabla para alertas
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS alerts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,8 +88,6 @@ def init_database():
                     resolved BOOLEAN DEFAULT FALSE
                 )
             ''')
-            
-            # Tabla para archivos en cuarentena
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS quarantine (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,20 +99,15 @@ def init_database():
                     restored BOOLEAN DEFAULT FALSE
                 )
             ''')
-            
             conn.commit()
             logger.info("Base de datos inicializada correctamente")
-            
     except Exception as e:
         logger.error(f"Error al inicializar base de datos: {e}")
 
 def save_stats_to_db(stats_data):
-    """Guardar estadísticas en base de datos"""
     try:
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
-            
-            # Insertar estadísticas del sistema
             cursor.execute('''
                 INSERT INTO system_stats 
                 (timestamp, memoria_usada, memoria_libre, memoria_cache, swap_usada,
@@ -137,10 +124,7 @@ def save_stats_to_db(stats_data):
                 stats_data.get('paginas_activas', 0),
                 stats_data.get('paginas_inactivas', 0)
             ))
-            
             stats_id = cursor.lastrowid
-            
-            # Insertar procesos
             if 'procesos_top' in stats_data:
                 for proc in stats_data['procesos_top']:
                     cursor.execute('''
@@ -158,18 +142,13 @@ def save_stats_to_db(stats_data):
                         proc.get('fallos_menores', 0),
                         proc.get('fallos_mayores', 0)
                     ))
-            
             conn.commit()
-            
     except Exception as e:
         logger.error(f"Error al guardar estadísticas en BD: {e}")
 
 def analyze_anomalies(stats_data):
-    """Analizar datos para detectar anomalías"""
     alerts = []
-    
     try:
-        # Verificar uso excesivo de memoria
         total_mem = stats_data.get('memoria_usada', 0) + stats_data.get('memoria_libre', 0)
         if total_mem > 0:
             mem_usage_pct = (stats_data.get('memoria_usada', 0) / total_mem) * 100
@@ -187,20 +166,16 @@ def analyze_anomalies(stats_data):
                     'message': f'Alto uso de memoria: {mem_usage_pct:.1f}%',
                     'details': json.dumps(stats_data)
                 })
-        
-        # Verificar uso excesivo de swap
         swap_used = stats_data.get('swap_usada', 0)
-        if swap_used > 1024 * 1024:  # > 1GB
+        if swap_used > 1024 * 1024:
             alerts.append({
                 'type': 'swap',
                 'severity': 'warning',
                 'message': f'Alto uso de swap: {swap_used // (1024*1024)} GB',
                 'details': json.dumps({'swap_usada': swap_used})
             })
-        
-        # Verificar procesos con alto uso de memoria
         if 'procesos_top' in stats_data:
-            for proc in stats_data['procesos_top'][:5]:  # Top 5
+            for proc in stats_data['procesos_top'][:5]:
                 if proc.get('memoria_pct', 0) > 20:
                     alerts.append({
                         'type': 'process',
@@ -208,8 +183,6 @@ def analyze_anomalies(stats_data):
                         'message': f'Proceso {proc.get("nombre")} usando {proc.get("memoria_pct", 0):.1f}% de memoria',
                         'details': json.dumps(proc)
                     })
-        
-        # Verificar fallos de página excesivos
         major_faults = stats_data.get('fallos_mayores', 0)
         if major_faults > 10000:
             alerts.append({
@@ -218,23 +191,17 @@ def analyze_anomalies(stats_data):
                 'message': f'Alto número de fallos de página mayores: {major_faults}',
                 'details': json.dumps({'fallos_mayores': major_faults})
             })
-        
-        # Guardar alertas en base de datos
         if alerts:
             save_alerts_to_db(alerts)
-            
     except Exception as e:
         logger.error(f"Error al analizar anomalías: {e}")
-    
     return alerts
 
 def save_alerts_to_db(alerts):
-    """Guardar alertas en base de datos"""
     try:
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
             timestamp = int(time.time())
-            
             for alert in alerts:
                 cursor.execute('''
                     INSERT INTO alerts (timestamp, type, severity, message, details)
@@ -246,15 +213,12 @@ def save_alerts_to_db(alerts):
                     alert['message'],
                     alert['details']
                 ))
-            
             conn.commit()
-            
     except Exception as e:
         logger.error(f"Error al guardar alertas: {e}")
 
 @app.route('/')
 def index():
-    """Página principal con información básica de la API"""
     return jsonify({
         'name': 'USAC Antivirus Backend API',
         'version': '1.0.0',
@@ -265,64 +229,49 @@ def index():
             'GET /api/stats/history': 'Obtener histórico de estadísticas',
             'GET /api/alerts': 'Obtener alertas activas',
             'GET /api/quarantine': 'Obtener archivos en cuarentena',
+            'POST /api/quarantine': 'Poner archivo en cuarentena',
+            'POST /api/restore': 'Restaurar archivo de cuarentena',
             'WebSocket /': 'Actualizaciones en tiempo real'
         }
     })
 
 @app.route('/api/stats', methods=['POST'])
 def receive_stats():
-    """Recibir estadísticas del cliente C"""
     try:
         stats_data = request.get_json()
         if not stats_data:
             return jsonify({'error': 'No data received'}), 400
-        
-        # Agregar timestamp si no existe
         if 'timestamp' not in stats_data:
             stats_data['timestamp'] = int(time.time())
-        
-        # Actualizar datos globales
         global latest_stats
         with db_lock:
             latest_stats = stats_data.copy()
             stats_history.append(stats_data.copy())
-        
-        # Analizar anomalías
         alerts = analyze_anomalies(stats_data)
-        
-        # Guardar en base de datos
         save_stats_to_db(stats_data)
-        
-        # Enviar a clientes WebSocket
         socketio.emit('stats_update', {
             'stats': stats_data,
             'alerts': alerts
         })
-        
         logger.info(f"Estadísticas recibidas: Memoria {stats_data.get('memoria_usada', 0)} KB")
-        
         return jsonify({
             'status': 'success',
             'message': 'Stats received successfully',
             'alerts_generated': len(alerts)
         })
-        
     except Exception as e:
         logger.error(f"Error al recibir estadísticas: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/stats', methods=['GET'])
 def get_latest_stats():
-    """Obtener últimas estadísticas"""
     with db_lock:
         return jsonify(latest_stats)
 
 @app.route('/api/stats/history', methods=['GET'])
 def get_stats_history():
-    """Obtener histórico de estadísticas"""
     try:
         limit = request.args.get('limit', 50, type=int)
-        
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
             cursor.execute('''
@@ -330,18 +279,97 @@ def get_stats_history():
                 ORDER BY timestamp DESC 
                 LIMIT ?
             ''', (limit,))
-            
             columns = [desc[0] for desc in cursor.description]
             results = [dict(zip(columns, row)) for row in cursor.fetchall()]
-            
         return jsonify({
             'history': results,
             'count': len(results)
         })
-        
     except Exception as e:
-        logger.error(f"Error al recibir estadísticas: {e}")
+        logger.error(f"Error al obtener historial: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/quarantine', methods=['GET'])
+def get_quarantine_list():
+    try:
+        result = subprocess.run(['./usac_av_client', '-q'], capture_output=True, text=True)
+        output = result.stdout
+        error = result.stderr
+        if result.returncode != 0:
+            logger.error(f"Error al listar cuarentena: {error}")
+            return jsonify({'status': 'error', 'message': error}), 500
+        files = []
+        for line in output.splitlines():
+            if line.startswith("[INFO]") or line.startswith("====="):
+                continue
+            if "No files in quarantine" in line:
+                break
+            # Extraer número y nombre de archivo (e.g., "1. test.txt")
+            parts = line.split(". ", 1)
+            if len(parts) == 2:
+                filename = parts[1].strip()
+                # Intentar obtener original_path del archivo .meta
+                try:
+                    with open(f"/var/quarantine/{filename}.meta", 'r') as f:
+                        original_path = f.read().strip()
+                except:
+                    original_path = f"/unknown/{filename}"
+                files.append({'filename': filename, 'original_path': original_path})
+        return jsonify({
+            'status': 'success',
+            'quarantine_list': files
+        })
+    except Exception as e:
+        logger.error(f"Error al obtener lista de cuarentena: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/quarantine', methods=['POST'])
+def quarantine_file():
+    try:
+        data = request.get_json()
+        path = data.get('path')
+        if not path:
+            return jsonify({'status': 'error', 'message': 'Path is required'}), 400
+        result = subprocess.run(['./usac_av_client', '-s', path], capture_output=True, text=True)
+        output = result.stdout
+        error = result.stderr
+        if result.returncode != 0:
+            logger.error(f"Error al poner en cuarentena: {error}")
+            return jsonify({'status': 'error', 'message': error}), 500
+        if "Archivo limpio" in output:
+            return jsonify({'status': 'success', 'message': f'File {path} is clean'})
+        elif "Archivo MALICIOSO" in output or "Archivo sospechoso" in output:
+            filename = os.path.basename(path)
+            return jsonify({
+                'status': 'success',
+                'message': f'File {filename} successfully quarantined to /var/quarantine/{filename}'
+            })
+        else:
+            return jsonify({'status': 'error', 'message': output}), 500
+    except Exception as e:
+        logger.error(f"Error al poner en cuarentena: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/restore', methods=['POST'])
+def restore_file():
+    try:
+        data = request.get_json()
+        filename = data.get('filename')
+        if not filename:
+            return jsonify({'status': 'error', 'message': 'Filename is required'}), 400
+        result = subprocess.run(['./usac_av_client', '-r', filename], capture_output=True, text=True)
+        output = result.stdout
+        error = result.stderr
+        if result.returncode != 0:
+            logger.error(f"Error al restaurar: {error}")
+            return jsonify({'status': 'error', 'message': error}), 500
+        return jsonify({
+            'status': 'success',
+            'message': f'File {filename} restored successfully'
+        })
+    except Exception as e:
+        logger.error(f"Error al restaurar: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == '__main__':
     init_database()

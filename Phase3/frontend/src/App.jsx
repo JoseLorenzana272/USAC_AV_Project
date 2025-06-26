@@ -30,6 +30,7 @@ import {
   FileX,
   RotateCcw,
 } from "lucide-react"
+import io from "socket.io-client"
 
 // Register Chart.js components
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, ArcElement, Filler)
@@ -45,15 +46,8 @@ function App() {
     inactive_pages: 0,
     minor_page_faults: 0,
     major_page_faults: 0,
-    procesos_top: [
-      { name: "Process A", pid: 1234, mem_percent: 12.34 },
-      { name: "Process B", pid: 5678, mem_percent: 23.45 },
-      { name: "Process C", pid: 9101, mem_percent: 34.56 },
-    ],
-    quarantine_list: [
-      { filename: "test1.txt", original_path: "/tmp/test1.txt" },
-      { filename: "malicious.exe", original_path: "/bin/malicious.exe" },
-    ],
+    procesos_top: [],
+    quarantine_list: [],
   })
 
   // State for quarantine form
@@ -64,15 +58,15 @@ function App() {
   const [restoringFiles, setRestoringFiles] = useState(new Set())
 
   // State for memory usage history
-  const [memoryHistory, setMemoryHistory] = useState([])
-  const [timeLabels, setTimeLabels] = useState([])
+  const [memoryHistory, setMemoryHistory] = useState(Array(60).fill(0));
+  const [timeLabels, setTimeLabels] = useState(Array(60).fill(""));
 
   // State for system status
   const [systemStatus, setSystemStatus] = useState({
     threats: 0,
-    scanned: 1247,
-    quarantined: 2, // Matches initial quarantine_list length
-    uptime: "2d 14h 32m",
+    scanned: 0,
+    quarantined: 0,
+    uptime: "0h 0m 0s",
   })
 
   // Generate fake system metrics data
@@ -98,55 +92,107 @@ function App() {
     }
   }
 
-  // Update metrics every 5 seconds
+  // Initialize WebSocket
   useEffect(() => {
-    const initialMetrics = generateFakeMetrics()
-    setMetrics(initialMetrics)
+    const socket = io("http://172.16.198.130:5000", { transports: ["websocket"] })
 
-    const initialHistory = Array.from({ length: 20 }, () => Math.floor(Math.random() * 2000000) + 1000000)
-    const initialLabels = Array.from({ length: 20 }, (_, i) =>
-      new Date(Date.now() - (19 - i) * 5000).toLocaleTimeString("en-US", {
-        hour12: false,
-        minute: "2-digit",
-        second: "2-digit",
-      })
-    )
+    socket.on("connect", () => {
+      console.log("Connected to WebSocket")
+    })
 
-    setMemoryHistory(initialHistory)
-    setTimeLabels(initialLabels)
-
-    const interval = setInterval(() => {
-      const newMetrics = generateFakeMetrics()
-      setMetrics(newMetrics)
-
-      setMemoryHistory((prev) => [...prev.slice(1), newMetrics.mem_used])
-
+    socket.on("stats_update", ({ stats, alerts }) => {
+      setMetrics((prev) => ({
+        ...prev,
+        mem_used: stats.memoria_usada * 1000 || 0,
+        mem_free: stats.memoria_libre * 1000 || 0,
+        mem_cache: stats.memoria_cache * 1000 || 0,
+        swap_used: stats.swap_usada * 1000 || 0,
+        active_pages: stats.paginas_activas || 0,
+        inactive_pages: stats.paginas_inactivas || 0,
+        minor_page_faults: stats.fallos_menores || 0,
+        major_page_faults: stats.fallos_mayores || 0,
+        procesos_top: stats.procesos_top.map((proc) => ({
+          name: proc.nombre,
+          pid: proc.pid,
+          mem_percent: proc.memoria_pct,
+        })) || [],
+        // Preserve quarantine_list
+        quarantine_list: prev.quarantine_list,
+      }))
+      setMemoryHistory((prev) => [...prev.slice(-59), stats.memoria_usada * 1000 || 0])
       setTimeLabels((prev) => [
         ...prev.slice(1),
-        new Date().toLocaleTimeString("en-US", {
+        new Date(stats.timestamp * 1000).toLocaleTimeString("en-US", {
           hour12: false,
           minute: "2-digit",
           second: "2-digit",
         }),
       ])
+      setSystemStatus((prev) => ({
+        ...prev,
+        scanned: prev.scanned + 1,
+        threats: stats.fallos_mayores > 100 ? prev.threats + 1 : prev.threats,
+        uptime: formatUptime(),
+      }))
+      if (alerts && alerts.length > 0) {
+        setQuarantineMessage(alerts[0].message)
+        setMessageType(alerts[0].severity === "critical" ? "error" : "warning")
+      }
+    })
 
-      // Update system status occasionally
-      if (Math.random() > 0.7) {
+    socket.on("disconnect", () => {
+      console.log("Disconnected from WebSocket")
+      setQuarantineMessage("Lost connection to backend")
+      setMessageType("error")
+    })
+
+    // Fetch initial quarantine list
+    fetchQuarantineList()
+
+    return () => {
+      socket.disconnect()
+    }
+  }, [])
+
+  // Fetch quarantine list
+  const fetchQuarantineList = async () => {
+    try {
+      const response = await fetch("http://172.16.198.130:5000/api/quarantine")
+      const data = await response.json()
+      if (data.status === "success") {
+        setMetrics((prev) => ({
+          ...prev,
+          quarantine_list: data.quarantine_list,
+        }))
         setSystemStatus((prev) => ({
           ...prev,
-          scanned: prev.scanned + Math.floor(Math.random() * 5) + 1,
-          threats: Math.random() > 0.9 ? prev.threats + 1 : prev.threats,
+          quarantined: data.quarantine_list.length,
         }))
+      } else {
+        setQuarantineMessage(data.message)
+        setMessageType("error")
       }
-    }, 5000)
+    } catch (error) {
+      setQuarantineMessage(`Failed to fetch quarantine list: ${error.message}`)
+      setMessageType("error")
+    }
+  }
 
-    return () => clearInterval(interval)
-  }, [])
+  const [startTime, setStartTime] = useState(Math.floor(Date.now() / 1000));
+
+  const formatUptime = () => {
+    const now = Math.floor(Date.now() / 1000);
+    const uptimeSeconds = now - startTime;
+    if (uptimeSeconds < 0) return "0d 0h 0m";
+    const days = Math.floor(uptimeSeconds / 86400);
+    const hours = Math.floor((uptimeSeconds % 86400) / 3600);
+    const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+    return `${days}d ${hours}h ${minutes}m`;
+  };
 
   // Handle quarantine file action
   const handleQuarantine = async (e) => {
     e.preventDefault()
-
     if (!filePath.trim()) {
       setQuarantineMessage("Please enter a valid file path")
       setMessageType("error")
@@ -157,55 +203,53 @@ function App() {
     setQuarantineMessage("Scanning file...")
     setMessageType("scanning")
 
-    // Simulate scanning delay
-    setTimeout(() => {
-      const isSuccess = Math.random() > 0.3  // 70% success rate
-      const filename = filePath.split("/").pop()
-      const result = isSuccess
-        ? {
-            status: "success",
-            message: `File ${filename} successfully quarantined to /var/quarantine/${filename}`,
-          }
-        : {
-            status: "error",
-            message: "Invalid path or file not found",
-          }
-
+    try {
+      const response = await fetch("http://172.16.198.130:5000/api/quarantine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: filePath }),
+      })
+      const result = await response.json()
       setQuarantineMessage(result.message)
       setMessageType(result.status)
       setIsScanning(false)
 
-      if (result.status === "success") {
+      if (result.status === "success" && !result.message.includes("is clean")) {
+        const filename = filePath.split("/").pop()
         setFilePath("")
-        setMetrics((prev) => ({
-          ...prev,
-          quarantine_list: [...prev.quarantine_list, { filename, original_path: filePath }],
-        }))
-        setSystemStatus((prev) => ({ ...prev, quarantined: prev.quarantine_list.length + 1 }))
+        setMetrics((prev) => {
+          const newQuarantineList = [...prev.quarantine_list, { filename, original_path: filePath }]
+          setSystemStatus((prevStatus) => ({
+            ...prevStatus,
+            quarantined: newQuarantineList.length,
+          }))
+          return {
+            ...prev,
+            quarantine_list: newQuarantineList,
+          }
+        })
       }
-    }, 2000)
+    } catch (error) {
+      setQuarantineMessage(`Quarantine failed: ${error.message}`)
+      setMessageType("error")
+      setIsScanning(false)
+    }
   }
 
   // Handle restore file action
-  const handleRestore = (filename) => {
+  const handleRestore = async (filename) => {
     if (!confirm(`Are you sure you want to restore ${filename}?`)) return
     setRestoringFiles((prev) => new Set(prev).add(filename))
     setQuarantineMessage(`Restoring ${filename}...`)
     setMessageType("scanning")
 
-    // Simulate restoration delay
-    setTimeout(() => {
-      const isSuccess = Math.random() > 0.2 // 80% success rate
-      const result = isSuccess
-        ? {
-            status: "success",
-            message: `File ${filename} restored successfully`,
-          }
-        : {
-            status: "error",
-            message: `Failed to restore ${filename}: File not found`,
-          }
-
+    try {
+      const response = await fetch("http://172.16.198.130:5000/api/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename }),
+      })
+      const result = await response.json()
       setQuarantineMessage(result.message)
       setMessageType(result.status)
       setRestoringFiles((prev) => {
@@ -219,7 +263,7 @@ function App() {
           const newQuarantineList = prev.quarantine_list.filter((f) => f.filename !== filename)
           setSystemStatus((prevStatus) => ({
             ...prevStatus,
-            quarantined: newQuarantineList.length, // Use new list length
+            quarantined: newQuarantineList.length,
           }))
           return {
             ...prev,
@@ -227,16 +271,24 @@ function App() {
           }
         })
       }
-    }, 2000)
+    } catch (error) {
+      setQuarantineMessage(`Restore failed: ${error.message}`)
+      setMessageType("error")
+      setRestoringFiles((prev) => {
+        const next = new Set(prev)
+        next.delete(filename)
+        return next
+      })
+    }
   }
 
   // Format bytes to readable format
   const formatBytes = (bytes) => {
     if (bytes === 0) return "0 KB"
-    const k = 1024
-    const sizes = ["KB", "MB", "GB", "TB"]
+    const k = 1000
+    const sizes = ["B", "KB", "MB", "GB", "TB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i]
+    return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
   }
 
   // Create minimal donut chart data
@@ -357,8 +409,8 @@ function App() {
       title: "Cache Memory",
       value: formatBytes(metrics.mem_cache),
       icon: Cpu,
-      chart: createDonutData(metrics.mem_cache, metrics.mem_cache + 500000),
-      percentage: Math.round((metrics.mem_cache / (metrics.mem_cache + 500000)) * 100),
+      chart: createDonutData(metrics.mem_cache, metrics.mem_cache + metrics.mem_free),
+      percentage: Math.round((metrics.mem_cache / (metrics.mem_cache + metrics.mem_free)) * 100),
     },
     {
       title: "Swap Used",
@@ -385,15 +437,15 @@ function App() {
       title: "Minor Page Faults",
       value: metrics.minor_page_faults.toLocaleString(),
       icon: AlertTriangle,
-      chart: createDonutData(metrics.minor_page_faults, 10000),
-      percentage: Math.round((metrics.minor_page_faults / 10000) * 100),
+      chart: createDonutData(metrics.minor_page_faults, metrics.minor_page_faults + 100000),
+      percentage: Math.min(100, Math.round((metrics.minor_page_faults / 1000000) * 100)) || 0,
     },
     {
       title: "Major Page Faults",
       value: metrics.major_page_faults.toLocaleString(),
       icon: FileX,
-      chart: createDonutData(metrics.major_page_faults, 1000),
-      percentage: Math.round((metrics.major_page_faults / 1000) * 100),
+      chart: createDonutData(metrics.major_page_faults, metrics.major_page_faults + 1000),
+      percentage: Math.min(100, Math.round((metrics.major_page_faults / 10000) * 100)) || 0,
     },
   ]
 
