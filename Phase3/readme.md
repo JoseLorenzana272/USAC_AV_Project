@@ -394,6 +394,8 @@ Luego recompila el kernel y reinicia.
 ### 1. Errores de argumentos en funciones
 ![image](https://github.com/user-attachments/assets/0dbc92a0-ad07-4f7b-a596-f9126e575006)
 
+Se debe a que estamos pasando un struct user_namespace * como argumento a funciones que esperan tipos distintos (struct mnt_idmap * para vfs_mkdir y struct renamedata * para vfs_rename). Además, la función vfs_rename está recibiendo más argumentos de los que permite.
+
 ### 2. Error en parámetros y falta de coordinación con syscalls.h
 ![image](https://github.com/user-attachments/assets/97ccc148-5e54-4d6d-bc80-1e77926fb348)
 
