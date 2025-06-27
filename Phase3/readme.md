@@ -390,7 +390,15 @@ obj-y += sys_scan_processes.o sys_get_page_faults.o sys_scan_file.o usac_av.o
 Luego recompila el kernel y reinicia.
 
 
-**Nota:** Cada syscall debe implementarse y registrarse por separado. Consulta los archivos fuente en el directorio `kernel/` para ver la lógica completa y personalizada de cada syscall.
+## Errores
+### 1. Errores de argumentos en funciones
+![image](https://github.com/user-attachments/assets/0dbc92a0-ad07-4f7b-a596-f9126e575006)
 
+### 2. Error en parámetros y falta de coordinación con syscalls.h
+![image](https://github.com/user-attachments/assets/97ccc148-5e54-4d6d-bc80-1e77926fb348)
 
+### 3. Error con BTF
+![image](https://github.com/user-attachments/assets/a2e16fed-8273-4ba3-a45a-3cf89300e19d)
+
+El compilador del kernel no pudo generar el archivo vmlinux debido a que falta la sección .BTF necesaria para el soporte de BPF (eBPF).
 
